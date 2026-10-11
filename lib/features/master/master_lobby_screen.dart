@@ -4,6 +4,7 @@ import 'package:qr_flutter/qr_flutter.dart';
 
 import '../../data/models/player_model.dart';
 import '../../state/master_state.dart';
+import 'minigame_list_screen.dart';
 
 class MasterLobbyScreen extends StatelessWidget {
   const MasterLobbyScreen({super.key});
@@ -19,10 +20,33 @@ class MasterLobbyScreen extends StatelessWidget {
     }
 
     return Scaffold(
-      appBar: AppBar(title: Text(session.name)),
+      appBar: AppBar(
+        title: Text(session.name),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.extension_outlined),
+            tooltip: "Minijocs",
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const MinigameListScreen()),
+            ),
+          ),
+        ],
+      ),
       body: ListView(
         padding: const EdgeInsets.all(24),
         children: [
+          Card(
+            child: ListTile(
+              leading: const Icon(Icons.extension_outlined),
+              title: Text("Minijocs (${master.minigames.length})"),
+              subtitle: const Text("Crear i editar els minijocs de la partida"),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const MinigameListScreen()),
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
           if (connectionInfo == null)
             Column(
               children: [

@@ -9,19 +9,42 @@ MinigameStatus minigameStatusFromString(String value) {
   );
 }
 
-/// Punts que corresponen a una posició concreta (1r, 2n...). Els punts són
-/// sempre enters i poden ser positius, negatius o zero.
+/// Tipus d'una regla de puntuació: una posició exacta (1r, 2n...) o la
+/// posició "última", sigui quina sigui (útil quan el nombre de jugadors
+/// varia d'una partida a l'altra del mateix minijoc).
+enum ScoringRuleType { exactPosition, lastPlace }
+
+/// Punts que corresponen a una posició concreta, o a "qui quedi últim".
+/// Els punts són sempre enters i poden ser positius, negatius o zero.
 class ScoringRule {
-  final int position;
+  final ScoringRuleType type;
+
+  /// Només té sentit quan `type == exactPosition`.
+  final int? position;
   final int points;
 
-  const ScoringRule({required this.position, required this.points});
+  const ScoringRule.exact({required int pos, required this.points})
+      : type = ScoringRuleType.exactPosition,
+        position = pos;
 
-  Map<String, Object?> toMap() => {'position': position, 'points': points};
+  const ScoringRule.last({required this.points})
+      : type = ScoringRuleType.lastPlace,
+        position = null;
+
+  bool get isLastPlace => type == ScoringRuleType.lastPlace;
+
+  Map<String, Object?> toMap() => {
+        'type': type.name,
+        'position': position,
+        'points': points,
+      };
 
   factory ScoringRule.fromMap(Map<String, Object?> map) {
-    return ScoringRule(
-      position: map['position'] as int,
+    if (map['type'] == ScoringRuleType.lastPlace.name) {
+      return ScoringRule.last(points: map['points'] as int);
+    }
+    return ScoringRule.exact(
+      pos: map['position'] as int,
       points: map['points'] as int,
     );
   }
@@ -72,12 +95,33 @@ class MinigameModel {
     );
   }
 
-  /// Punts que li tocarien a una posició segons les regles d'aquest
-  /// minijoc. Si la posició no té regla pròpia (per exemple, un minijoc
-  /// amb només 1r/2n/3r i un jugador que ha quedat 5è), es fa servir 0.
-  int pointsForPosition(int position) {
+  /// Regla de posició exacta d'aquest minijoc, si n'hi ha cap per a
+  /// `position`.
+  ScoringRule? ruleForPosition(int position) {
     for (final rule in scoring) {
-      if (rule.position == position) return rule.points;
+      if (!rule.isLastPlace && rule.position == position) return rule;
+    }
+    return null;
+  }
+
+  /// La regla especial "últim/a" d'aquest minijoc, si s'ha definit.
+  ScoringRule? get lastPlaceRule {
+    for (final rule in scoring) {
+      if (rule.isLastPlace) return rule;
+    }
+    return null;
+  }
+
+  /// Punts que li tocarien a un jugador que ha quedat a `position`, sabent
+  /// quina és la pitjor posició (`worstPosition`) d'aquesta partida
+  /// concreta del minijoc. Prioritat: 1) regla de posició exacta, 2) regla
+  /// "últim/a" si aquesta posició és la pitjor, 3) zero punts.
+  int pointsFor({required int position, required int worstPosition}) {
+    final exact = ruleForPosition(position);
+    if (exact != null) return exact.points;
+    if (position == worstPosition) {
+      final last = lastPlaceRule;
+      if (last != null) return last.points;
     }
     return 0;
   }

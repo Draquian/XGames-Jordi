@@ -201,7 +201,7 @@ class MasterServer {
       if (socket == null) continue;
       final payload = {
         'session': _session!.toPublicJson(),
-        // Fase 1: encara no hi ha minijocs jugables ni puntuació real.
+        // Fase 1/2: encara no hi ha minijocs jugables ni puntuació real.
         'minigames': const <Object?>[],
         'me': {
           'playerId': player.id,

@@ -5,6 +5,7 @@ import 'package:uuid/uuid.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../data/local/master_database.dart';
+import '../data/models/minigame_model.dart';
 import '../data/models/player_model.dart';
 import '../data/models/session_model.dart';
 import '../network/connection_info.dart';
@@ -23,6 +24,7 @@ class MasterState extends ChangeNotifier {
 
   SessionModel? _session;
   List<PlayerModel> _players = [];
+  List<MinigameModel> _minigames = [];
   String? _localIp;
   bool _isStarting = false;
 
@@ -33,6 +35,7 @@ class MasterState extends ChangeNotifier {
 
   SessionModel? get session => _session;
   List<PlayerModel> get players => List.unmodifiable(_players);
+  List<MinigameModel> get minigames => List.unmodifiable(_minigames);
   bool get isStarting => _isStarting;
   String? get startError => _startError;
   String? get localIp => _localIp;
@@ -78,6 +81,7 @@ class MasterState extends ChangeNotifier {
     _session = resumed;
     await MasterDatabase.instance.upsertSession(resumed);
     _players = _server.players;
+    _minigames = await MasterDatabase.instance.getMinigamesForSession(resumed.id);
     _isStarting = false;
     if (_localIp != null) await WakelockPlus.enable();
     notifyListeners();
@@ -120,6 +124,7 @@ class MasterState extends ChangeNotifier {
     _session = session;
     await MasterDatabase.instance.upsertSession(session);
     _players = _server.players;
+    _minigames = [];
     _isStarting = false;
     await WakelockPlus.enable();
     notifyListeners();
@@ -150,6 +155,54 @@ class MasterState extends ChangeNotifier {
     _session = updated;
     _server.updateSession(updated);
     await MasterDatabase.instance.upsertSession(updated);
+    notifyListeners();
+  }
+
+  /// Crea un minijoc nou per a la sessió actual, al final de la llista.
+  Future<void> createMinigame({
+    required String name,
+    required String description,
+    required String rules,
+    required List<ScoringRule> scoring,
+  }) async {
+    final session = _session;
+    if (session == null) return;
+    final minigame = MinigameModel(
+      id: _uuid.v4(),
+      sessionId: session.id,
+      name: name.trim(),
+      description: description.trim(),
+      rules: rules.trim(),
+      scoring: scoring,
+      status: MinigameStatus.pending,
+      orderIndex: _minigames.length,
+      createdAt: DateTime.now(),
+    );
+    await MasterDatabase.instance.upsertMinigame(minigame);
+    _minigames = [..._minigames, minigame];
+    notifyListeners();
+  }
+
+  /// Edita un minijoc ja existent (nom, descripció, normes o puntuació).
+  /// L'historial de resultats ja jugats amb les regles anteriors NO es
+  /// recalcula: només canvia la definició de cara al que quedi per jugar.
+  Future<void> updateMinigame(
+    String minigameId, {
+    required String name,
+    required String description,
+    required String rules,
+    required List<ScoringRule> scoring,
+  }) async {
+    final idx = _minigames.indexWhere((m) => m.id == minigameId);
+    if (idx == -1) return;
+    final updated = _minigames[idx].copyWith(
+      name: name.trim(),
+      description: description.trim(),
+      rules: rules.trim(),
+      scoring: scoring,
+    );
+    await MasterDatabase.instance.upsertMinigame(updated);
+    _minigames = [..._minigames]..[idx] = updated;
     notifyListeners();
   }
 
