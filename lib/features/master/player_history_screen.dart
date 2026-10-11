@@ -37,62 +37,22 @@ class _PlayerHistoryScreenState extends State<PlayerHistoryScreen> {
     });
   }
 
+  /// Obre el diàleg i, NOMÉS quan ja s'ha tancat, desa l'ajustament i
+  /// recarrega l'historial. El diàleg gestiona els seus propis camps de
+  /// text (vegeu `_AdjustmentDialog`), així no cal alliberar-los aquí.
   Future<void> _openAddAdjustmentDialog() async {
-    final deltaController = TextEditingController();
-    final reasonController = TextEditingController();
-    final saved = await showDialog<bool>(
+    final input = await showDialog<_AdjustmentInput>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text("Afegir ajustament"),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: deltaController,
-              keyboardType: const TextInputType.numberWithOptions(signed: true),
-              decoration: const InputDecoration(
-                labelText: "Punts (poden ser negatius)",
-              ),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: reasonController,
-              decoration: const InputDecoration(labelText: "Motiu"),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: const Text("Cancel·lar"),
-          ),
-          FilledButton(
-            onPressed: () {
-              final delta = int.tryParse(deltaController.text.trim());
-              final reason = reasonController.text.trim();
-              if (delta == null || reason.isEmpty) {
-                ScaffoldMessenger.of(dialogContext).showSnackBar(const SnackBar(
-                  content: Text("Posa una puntuació vàlida i un motiu."),
-                ));
-                return;
-              }
-              Navigator.of(dialogContext).pop(true);
-              context.read<MasterState>().addPointAdjustment(
-                    playerId: widget.player.id,
-                    delta: delta,
-                    reason: reason,
-                  );
-            },
-            child: const Text("Desar"),
-          ),
-        ],
-      ),
+      builder: (_) => const _AdjustmentDialog(),
     );
-    deltaController.dispose();
-    reasonController.dispose();
-    if (saved == true) {
-      await _load();
-    }
+    if (input == null || !mounted) return;
+    await context.read<MasterState>().addPointAdjustment(
+          playerId: widget.player.id,
+          delta: input.delta,
+          reason: input.reason,
+        );
+    if (!mounted) return;
+    await _load();
   }
 
   @override
@@ -147,8 +107,9 @@ class _PlayerHistoryScreenState extends State<PlayerHistoryScreen> {
                     final points = entry['points'] as int? ?? 0;
                     final label = entry['label'] as String? ?? '';
                     return ListTile(
-                      leading:
-                          Icon(isAdjustment ? Icons.tune : Icons.emoji_events_outlined),
+                      leading: Icon(
+                        isAdjustment ? Icons.tune : Icons.emoji_events_outlined,
+                      ),
                       title: Text(label),
                       subtitle: isAdjustment
                           ? const Text("Ajustament manual")
@@ -161,6 +122,91 @@ class _PlayerHistoryScreenState extends State<PlayerHistoryScreen> {
                   }),
               ],
             ),
+    );
+  }
+}
+
+/// El que retorna el diàleg quan el màster prem "Desar".
+class _AdjustmentInput {
+  const _AdjustmentInput(this.delta, this.reason);
+
+  final int delta;
+  final String reason;
+}
+
+/// Diàleg per afegir un ajustament de punts. Té els seus propis
+/// controladors de text i els allibera al seu `dispose`, que Flutter
+/// crida quan el diàleg ja ha desaparegut del tot (després de
+/// l'animació de tancament). Alliberar-los des de fora, just després de
+/// tancar-lo, provoca errors de framework.
+class _AdjustmentDialog extends StatefulWidget {
+  const _AdjustmentDialog();
+
+  @override
+  State<_AdjustmentDialog> createState() => _AdjustmentDialogState();
+}
+
+class _AdjustmentDialogState extends State<_AdjustmentDialog> {
+  final _deltaController = TextEditingController();
+  final _reasonController = TextEditingController();
+  String? _error;
+
+  @override
+  void dispose() {
+    _deltaController.dispose();
+    _reasonController.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    final delta = int.tryParse(_deltaController.text.trim());
+    final reason = _reasonController.text.trim();
+    if (delta == null || reason.isEmpty) {
+      setState(() => _error = "Posa una puntuació vàlida i un motiu.");
+      return;
+    }
+    Navigator.of(context).pop(_AdjustmentInput(delta, reason));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text("Afegir ajustament"),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          TextField(
+            controller: _deltaController,
+            keyboardType: const TextInputType.numberWithOptions(signed: true),
+            decoration: const InputDecoration(
+              labelText: "Punts (poden ser negatius)",
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _reasonController,
+            decoration: const InputDecoration(labelText: "Motiu"),
+          ),
+          if (_error != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 12),
+              child: Text(
+                _error!,
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
+            ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text("Cancel·lar"),
+        ),
+        FilledButton(
+          onPressed: _submit,
+          child: const Text("Desar"),
+        ),
+      ],
     );
   }
 }
