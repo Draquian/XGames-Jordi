@@ -165,7 +165,7 @@ class MasterDatabase {
   }
 
   // ---------------------------------------------------------------------
-  // Minijocs, resultats i ajustaments (base preparada per a properes fases)
+  // Minijocs, resultats i ajustaments
   // ---------------------------------------------------------------------
 
   Future<void> upsertMinigame(MinigameModel minigame) async {
@@ -208,6 +208,30 @@ class MasterDatabase {
       orderBy: 'recorded_at ASC',
     );
     return rows.map(MinigameResultModel.fromMap).toList();
+  }
+
+  Future<List<MinigameResultModel>> getResultsForMinigame(
+    String minigameId,
+  ) async {
+    final db = await database;
+    final rows = await db.query(
+      'minigame_results',
+      where: 'minigame_id = ?',
+      whereArgs: [minigameId],
+    );
+    return rows.map(MinigameResultModel.fromMap).toList();
+  }
+
+  /// Esborra tots els resultats d'un minijoc. Es fa servir just abans de
+  /// desar-ne de nous, tant si és la primera vegada que es finalitza com
+  /// si el màster està corregint un resultat ja existent.
+  Future<void> deleteResultsForMinigame(String minigameId) async {
+    final db = await database;
+    await db.delete(
+      'minigame_results',
+      where: 'minigame_id = ?',
+      whereArgs: [minigameId],
+    );
   }
 
   Future<void> insertAdjustment(PointAdjustmentModel adjustment) async {

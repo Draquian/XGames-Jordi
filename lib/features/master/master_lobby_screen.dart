@@ -5,6 +5,8 @@ import 'package:qr_flutter/qr_flutter.dart';
 import '../../data/models/player_model.dart';
 import '../../state/master_state.dart';
 import 'minigame_list_screen.dart';
+import 'player_history_screen.dart';
+import 'ranking_screen.dart';
 
 class MasterLobbyScreen extends StatelessWidget {
   const MasterLobbyScreen({super.key});
@@ -24,6 +26,13 @@ class MasterLobbyScreen extends StatelessWidget {
         title: Text(session.name),
         actions: [
           IconButton(
+            icon: const Icon(Icons.leaderboard_outlined),
+            tooltip: "Classificació",
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const RankingScreen()),
+            ),
+          ),
+          IconButton(
             icon: const Icon(Icons.extension_outlined),
             tooltip: "Minijocs",
             onPressed: () => Navigator.of(context).push(
@@ -35,6 +44,18 @@ class MasterLobbyScreen extends StatelessWidget {
       body: ListView(
         padding: const EdgeInsets.all(24),
         children: [
+          Card(
+            child: ListTile(
+              leading: const Icon(Icons.leaderboard_outlined),
+              title: const Text("Classificació"),
+              subtitle: const Text("Punts totals i historial de tots els jugadors"),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const RankingScreen()),
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
           Card(
             child: ListTile(
               leading: const Icon(Icons.extension_outlined),
@@ -136,6 +157,7 @@ class _PlayerTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final connected = player.status == PlayerStatus.connected;
+    final points = context.watch<MasterState>().totalPointsFor(player.id);
     return ListTile(
       leading: Icon(
         connected ? Icons.circle : Icons.circle_outlined,
@@ -144,10 +166,21 @@ class _PlayerTile extends StatelessWidget {
       ),
       title: Text(player.name),
       subtitle: Text(connected ? "Connectat" : "Desconnectat"),
-      trailing: IconButton(
-        icon: const Icon(Icons.person_remove_outlined),
-        tooltip: "Expulsar",
-        onPressed: () => _confirmKick(context),
+      onTap: () => Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => PlayerHistoryScreen(player: player),
+        ),
+      ),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text("$points pts"),
+          IconButton(
+            icon: const Icon(Icons.person_remove_outlined),
+            tooltip: "Expulsar",
+            onPressed: () => _confirmKick(context),
+          ),
+        ],
       ),
     );
   }

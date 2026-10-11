@@ -17,11 +17,21 @@ import 'protocol.dart';
 /// iniciar minijocs...) les fa la UI del màster directament, mai un
 /// missatge de xarxa d'un jugador.
 class MasterServer {
-  MasterServer({required this.onPlayersUpdated});
+  MasterServer({
+    required this.onPlayersUpdated,
+    required this.buildStateForPlayer,
+  });
 
   /// Es crida cada vegada que la llista de jugadors canvia, perquè la UI
   /// del màster (`MasterState`) es pugui refrescar.
   final void Function(List<PlayerModel> players) onPlayersUpdated;
+
+  /// Construeix el missatge `state` PERSONALITZAT per a un jugador
+  /// concret (les seves pròpies dades completes; de la resta, només nom
+  /// i estat). El `MasterState` és qui sap combinar sessió + minijocs +
+  /// resultats, així que li deleguem aquesta feina.
+  final Future<Map<String, Object?>> Function(PlayerModel player)
+      buildStateForPlayer;
 
   static const _uuid = Uuid();
 
@@ -105,7 +115,7 @@ class MasterServer {
               'playerId': player.id,
               'sessionId': _session!.id,
             }));
-            _broadcastState();
+            await _broadcastState();
             onPlayersUpdated(_players);
             break;
           case ClientMsgType.leave:
@@ -166,7 +176,7 @@ class MasterServer {
     final updated = _players[idx].copyWith(status: PlayerStatus.disconnected);
     _players[idx] = updated;
     await MasterDatabase.instance.upsertPlayer(updated);
-    _broadcastState();
+    await _broadcastState();
     onPlayersUpdated(_players);
   }
 
@@ -183,36 +193,25 @@ class MasterServer {
       socket.add(encodeMessage(ServerMsgType.kicked, const {}));
       await socket.close();
     }
-    _broadcastState();
+    await _broadcastState();
     onPlayersUpdated(_players);
   }
 
   /// Envia a cada jugador connectat un missatge PERSONALITZAT: les seves
   /// pròpies dades completes, i de la resta només el nom i l'estat (mai
   /// els seus punts), tal com exigeix la privacitat de la classificació.
-  void _broadcastState() {
+  Future<void> _broadcastState() async {
     if (_session == null) return;
-    final roster = _players
-        .where((p) => p.status != PlayerStatus.kicked)
-        .map((p) => p.toRosterJson())
-        .toList();
     for (final player in _players) {
       final socket = _socketsByPlayerId[player.id];
       if (socket == null) continue;
-      final payload = {
-        'session': _session!.toPublicJson(),
-        // Fase 1/2: encara no hi ha minijocs jugables ni puntuació real.
-        'minigames': const <Object?>[],
-        'me': {
-          'playerId': player.id,
-          'name': player.name,
-          'totalPoints': 0,
-          'results': const <Object?>[],
-          'status': player.status.name,
-        },
-        'players': roster,
-      };
+      final payload = await buildStateForPlayer(player);
       socket.add(encodeMessage(ServerMsgType.state, payload));
     }
   }
+
+  /// Força l'enviament de l'estat actualitzat a tothom. Es fa servir
+  /// quan canvia alguna cosa que no ve d'un missatge de xarxa (per
+  /// exemple, el màster comença o finalitza un minijoc).
+  Future<void> broadcastNow() => _broadcastState();
 }

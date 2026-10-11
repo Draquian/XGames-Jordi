@@ -4,6 +4,8 @@ import 'package:provider/provider.dart';
 import '../../state/player_state.dart';
 import '../role_select_screen.dart';
 import '../shared/reconnecting_banner.dart';
+import 'minigame_active_section.dart';
+import 'my_stats_screen.dart';
 
 class PlayerLobbyScreen extends StatefulWidget {
   const PlayerLobbyScreen({super.key});
@@ -66,6 +68,13 @@ class _PlayerLobbyScreenState extends State<PlayerLobbyScreen> {
         ),
         actions: [
           IconButton(
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const MyStatsScreen()),
+            ),
+            icon: const Icon(Icons.bar_chart_outlined),
+            tooltip: "Els meus resultats",
+          ),
+          IconButton(
             onPressed: _leave,
             icon: const Icon(Icons.logout),
             tooltip: "Sortir",
@@ -76,41 +85,71 @@ class _PlayerLobbyScreenState extends State<PlayerLobbyScreen> {
         children: [
           if (!playerState.connected) const ReconnectingBanner(),
           Expanded(
-            child: ListView(
-              padding: const EdgeInsets.all(24),
-              children: [
-                Text(
-                  playerState.myName.isEmpty
-                      ? "Connectant..."
-                      : "Hola, ${playerState.myName}",
-                  style: Theme.of(context).textTheme.headlineSmall,
-                ),
-                const SizedBox(height: 4),
-                const Text(
-                  "Esperant que el màster comenci el primer minijoc...",
-                ),
-                const SizedBox(height: 32),
-                Text(
-                  "Jugadors a la partida",
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-                const SizedBox(height: 8),
-                ...playerState.roster.map(
-                  (p) => ListTile(
-                    leading: const Icon(Icons.person_outline),
-                    title: Text(p['name'] as String? ?? ''),
-                    subtitle: Text(
-                      p['status'] == 'connected'
-                          ? "Connectat"
-                          : "Desconnectat",
-                    ),
-                  ),
-                ),
-              ],
-            ),
+            child: playerState.activeMinigame != null
+                ? MinigameActiveSection(
+                    minigame: playerState.activeMinigame!,
+                  )
+                : _WaitingView(playerState: playerState),
           ),
         ],
       ),
+    );
+  }
+}
+
+class _WaitingView extends StatelessWidget {
+  const _WaitingView({required this.playerState});
+
+  final PlayerState playerState;
+
+  @override
+  Widget build(BuildContext context) {
+    final hasHistory = playerState.myHistory.isNotEmpty;
+    return ListView(
+      padding: const EdgeInsets.all(24),
+      children: [
+        Text(
+          playerState.myName.isEmpty
+              ? "Connectant..."
+              : "Hola, ${playerState.myName}",
+          style: Theme.of(context).textTheme.headlineSmall,
+        ),
+        const SizedBox(height: 4),
+        Text(
+          hasHistory
+              ? "Portes ${playerState.myTotalPoints} punts."
+              : "Esperant que el màster comenci el primer minijoc...",
+        ),
+        if (hasHistory) ...[
+          const SizedBox(height: 16),
+          Card(
+            child: ListTile(
+              leading: const Icon(Icons.emoji_events_outlined),
+              title: Text("${playerState.myTotalPoints} punts"),
+              subtitle: const Text("Veure el desglossament complet"),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const MyStatsScreen()),
+              ),
+            ),
+          ),
+        ],
+        const SizedBox(height: 32),
+        Text(
+          "Jugadors a la partida",
+          style: Theme.of(context).textTheme.titleMedium,
+        ),
+        const SizedBox(height: 8),
+        ...playerState.roster.map(
+          (p) => ListTile(
+            leading: const Icon(Icons.person_outline),
+            title: Text(p['name'] as String? ?? ''),
+            subtitle: Text(
+              p['status'] == 'connected' ? "Connectat" : "Desconnectat",
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

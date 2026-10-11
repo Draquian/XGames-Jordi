@@ -44,6 +44,32 @@ class PlayerState extends ChangeNotifier {
         .toList(growable: false);
   }
 
+  /// El propi historial: una barreja de resultats de minijocs i
+  /// ajustaments manuals del màster, en ordre cronològic. Cada entrada té
+  /// `type` ('result' o 'adjustment'), `label`, `position` (només als
+  /// resultats) i `points`.
+  List<Map<String, Object?>> get myHistory {
+    final list = (_lastState?['me'] as Map?)?['history'] as List?;
+    if (list == null) return const [];
+    return list
+        .map((e) => Map<String, Object?>.from(e as Map))
+        .toList(growable: false);
+  }
+
+  /// El minijoc que el màster té actiu ara mateix, o `null` si cap.
+  Map<String, Object?>? get activeMinigame {
+    final session = _lastState?['session'] as Map?;
+    final currentId = session?['currentMinigameId'] as String?;
+    if (currentId == null) return null;
+    final list = _lastState?['minigames'] as List?;
+    if (list == null) return null;
+    for (final raw in list) {
+      final m = Map<String, Object?>.from(raw as Map);
+      if (m['id'] == currentId) return m;
+    }
+    return null;
+  }
+
   Future<void> joinSession({
     required ConnectionInfo connectionInfo,
     required String playerName,
