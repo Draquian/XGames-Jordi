@@ -165,7 +165,7 @@ class MasterDatabase {
   }
 
   // ---------------------------------------------------------------------
-  // Minijocs, resultats i ajustaments
+  // Minijocs, resultats i ajustaments (base preparada per a properes fases)
   // ---------------------------------------------------------------------
 
   Future<void> upsertMinigame(MinigameModel minigame) async {

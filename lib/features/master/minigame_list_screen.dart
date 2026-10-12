@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../data/models/minigame_model.dart';
+import '../../data/models/session_model.dart';
 import '../../state/master_state.dart';
 import 'minigame_editor_screen.dart';
 import 'minigame_results_screen.dart';
@@ -14,6 +15,8 @@ class MinigameListScreen extends StatelessWidget {
     final master = context.watch<MasterState>();
     final minigames = master.minigames;
     final activeId = master.session?.currentMinigameId;
+    final sessionFinished =
+        master.session?.status == SessionStatus.finished;
     MinigameModel? active;
     if (activeId != null) {
       for (final m in minigames) {
@@ -64,30 +67,43 @@ class MinigameListScreen extends StatelessWidget {
                       minigame: minigames[i],
                       anotherOneActive: activeId != null &&
                           activeId != minigames[i].id,
+                      disabled: sessionFinished,
                     ),
                   ),
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () => Navigator.of(context).push(
-          MaterialPageRoute(builder: (_) => const MinigameEditorScreen()),
-        ),
-        tooltip: "Nou minijoc",
-        child: const Icon(Icons.add),
-      ),
+      floatingActionButton: sessionFinished
+          ? null
+          : FloatingActionButton(
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => const MinigameEditorScreen(),
+                ),
+              ),
+              tooltip: "Nou minijoc",
+              child: const Icon(Icons.add),
+            ),
     );
   }
 }
 
 class _MinigameTile extends StatelessWidget {
-  const _MinigameTile({required this.minigame, required this.anotherOneActive});
+  const _MinigameTile({
+    required this.minigame,
+    required this.anotherOneActive,
+    required this.disabled,
+  });
 
   final MinigameModel minigame;
 
   /// Si `true`, ja hi ha un ALTRE minijoc en curs i aquest no es pot
   /// començar ara mateix.
   final bool anotherOneActive;
+
+  /// Si `true`, la partida ja ha finalitzat i no es poden començar més
+  /// minijocs (encara es poden consultar o corregir resultats).
+  final bool disabled;
 
   IconData get _statusIcon {
     switch (minigame.status) {
@@ -155,7 +171,7 @@ class _MinigameTile extends StatelessWidget {
                 ),
                 if (minigame.status == MinigameStatus.pending)
                   FilledButton(
-                    onPressed: anotherOneActive
+                    onPressed: (anotherOneActive || disabled)
                         ? null
                         : () => context
                             .read<MasterState>()

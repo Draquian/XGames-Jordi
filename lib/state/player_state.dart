@@ -70,6 +70,21 @@ class PlayerState extends ChangeNotifier {
     return null;
   }
 
+  /// `true` quan el màster ha finalitzat la partida: és el moment de
+  /// mostrar el podi final a tothom.
+  bool get sessionFinished =>
+      (_lastState?['session'] as Map?)?['status'] == 'finished';
+
+  /// La classificació final (nom + punts de TOTS els jugadors), només
+  /// disponible un cop la partida ha finalitzat.
+  List<Map<String, Object?>> get finalStandings {
+    final list = _lastState?['finalStandings'] as List?;
+    if (list == null) return const [];
+    return list
+        .map((e) => Map<String, Object?>.from(e as Map))
+        .toList(growable: false);
+  }
+
   Future<void> joinSession({
     required ConnectionInfo connectionInfo,
     required String playerName,

@@ -3,7 +3,9 @@ import 'package:provider/provider.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
 import '../../data/models/player_model.dart';
+import '../../data/models/session_model.dart';
 import '../../state/master_state.dart';
+import 'final_podium_screen.dart';
 import 'minigame_list_screen.dart';
 import 'player_history_screen.dart';
 import 'ranking_screen.dart';
@@ -48,7 +50,8 @@ class MasterLobbyScreen extends StatelessWidget {
             child: ListTile(
               leading: const Icon(Icons.leaderboard_outlined),
               title: const Text("Classificació"),
-              subtitle: const Text("Punts totals i historial de tots els jugadors"),
+              subtitle:
+                  const Text("Punts totals i historial de tots els jugadors"),
               trailing: const Icon(Icons.chevron_right),
               onTap: () => Navigator.of(context).push(
                 MaterialPageRoute(builder: (_) => const RankingScreen()),
@@ -78,8 +81,7 @@ class MasterLobbyScreen extends StatelessWidget {
                 ),
                 const SizedBox(height: 12),
                 OutlinedButton(
-                  onPressed: () =>
-                      context.read<MasterState>().refreshLocalIp(),
+                  onPressed: () => context.read<MasterState>().refreshLocalIp(),
                   child: const Text("Ja ho he fet, torna-ho a provar"),
                 ),
               ],
@@ -143,10 +145,68 @@ class MasterLobbyScreen extends StatelessWidget {
             ...master.players
                 .where((p) => p.status != PlayerStatus.kicked)
                 .map((p) => _PlayerTile(player: p)),
+          const SizedBox(height: 32),
+          const Divider(),
+          const SizedBox(height: 8),
+          if (session.status == SessionStatus.finished)
+            FilledButton.icon(
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const FinalPodiumScreen()),
+              ),
+              icon: const Icon(Icons.emoji_events_outlined),
+              label: const Text("Veure el podi final"),
+            )
+          else
+            OutlinedButton.icon(
+              style: OutlinedButton.styleFrom(
+                foregroundColor: Theme.of(context).colorScheme.error,
+                side: BorderSide(color: Theme.of(context).colorScheme.error),
+              ),
+              onPressed: () => _confirmEndSession(context),
+              icon: const Icon(Icons.flag_outlined),
+              label: const Text("Finalitzar la partida"),
+            ),
         ],
       ),
     );
   }
+}
+
+Future<void> _confirmEndSession(BuildContext context) async {
+  final confirmed = await showDialog<bool>(
+    context: context,
+    builder: (dialogContext) => AlertDialog(
+      title: const Text("Finalitzar la partida?"),
+      content: const Text(
+        "Es mostrarà el podi final a tots els jugadors i la sessió es "
+        "tancarà a noves incorporacions. Assegura't que no hi ha cap "
+        "minijoc en curs.",
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(dialogContext).pop(false),
+          child: const Text("Cancel·lar"),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.of(dialogContext).pop(true),
+          child: const Text("Finalitzar"),
+        ),
+      ],
+    ),
+  );
+  if (confirmed != true || !context.mounted) return;
+  final master = context.read<MasterState>();
+  final ok = await master.endSession();
+  if (!context.mounted) return;
+  if (!ok) {
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+      content: Text("Finalitza primer el minijoc que està en curs."),
+    ));
+    return;
+  }
+  Navigator.of(context).push(
+    MaterialPageRoute(builder: (_) => const FinalPodiumScreen()),
+  );
 }
 
 class _PlayerTile extends StatelessWidget {

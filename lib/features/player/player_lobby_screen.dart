@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../../state/player_state.dart';
 import '../role_select_screen.dart';
+import '../shared/podium_view.dart';
 import '../shared/reconnecting_banner.dart';
 import 'minigame_active_section.dart';
 import 'my_stats_screen.dart';
@@ -85,11 +86,13 @@ class _PlayerLobbyScreenState extends State<PlayerLobbyScreen> {
         children: [
           if (!playerState.connected) const ReconnectingBanner(),
           Expanded(
-            child: playerState.activeMinigame != null
-                ? MinigameActiveSection(
-                    minigame: playerState.activeMinigame!,
-                  )
-                : _WaitingView(playerState: playerState),
+            child: playerState.sessionFinished
+                ? PodiumView(standings: playerState.finalStandings)
+                : playerState.activeMinigame != null
+                    ? MinigameActiveSection(
+                        minigame: playerState.activeMinigame!,
+                      )
+                    : _WaitingView(playerState: playerState),
           ),
         ],
       ),

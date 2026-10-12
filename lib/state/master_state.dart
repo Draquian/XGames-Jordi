@@ -56,6 +56,22 @@ class MasterState extends ChangeNotifier {
     return list;
   }
 
+  /// La classificació final (nom + punts), sense els jugadors expulsats:
+  /// és exactament el que veurà tothom al podi quan la partida acabi.
+  List<Map<String, Object?>> get finalStandings => _computeFinalStandings();
+
+  List<Map<String, Object?>> _computeFinalStandings() {
+    final list = _players.where((p) => p.status != PlayerStatus.kicked).toList()
+      ..sort((a, b) {
+        final byPoints = totalPointsFor(b.id).compareTo(totalPointsFor(a.id));
+        if (byPoints != 0) return byPoints;
+        return a.name.compareTo(b.name);
+      });
+    return list
+        .map((p) => {'name': p.name, 'totalPoints': totalPointsFor(p.id)})
+        .toList();
+  }
+
   ConnectionInfo? get connectionInfo {
     final session = _session;
     final ip = _localIp;
@@ -85,6 +101,9 @@ class MasterState extends ChangeNotifier {
         .where((p) => p.status != PlayerStatus.kicked)
         .map((p) => p.toRosterJson())
         .toList();
+    final finalStandings = session.status == SessionStatus.finished
+        ? _computeFinalStandings()
+        : const <Object?>[];
     return {
       'session': session.toPublicJson(),
       'minigames': _minigames.map((m) => m.toPublicJson()).toList(),
@@ -96,6 +115,7 @@ class MasterState extends ChangeNotifier {
         'status': player.status.name,
       },
       'players': roster,
+      'finalStandings': finalStandings,
     };
   }
 
@@ -263,18 +283,6 @@ class MasterState extends ChangeNotifier {
 
   Future<void> kickPlayer(String playerId) => _server.kickPlayer(playerId);
 
-  /// Tanca (o torna a obrir) la sessió a noves incorporacions. Els
-  /// jugadors que ja hi eren sempre poden reconnectar-se, tanquis o no.
-  Future<void> setLockedForNewPlayers(bool locked) async {
-    final current = _session;
-    if (current == null) return;
-    final updated = current.copyWith(lockedForNewPlayers: locked);
-    _session = updated;
-    _server.updateSession(updated);
-    await MasterDatabase.instance.upsertSession(updated);
-    notifyListeners();
-  }
-
   /// Crea un minijoc nou per a la sessió actual, al final de la llista.
   Future<void> createMinigame({
     required String name,
@@ -405,6 +413,38 @@ class MasterState extends ChangeNotifier {
 
     await _server.broadcastNow();
     notifyListeners();
+  }
+
+  /// Tanca (o torna a obrir) la sessió a noves incorporacions. Els
+  /// jugadors que ja hi eren sempre poden reconnectar-se, tanquis o no.
+  Future<void> setLockedForNewPlayers(bool locked) async {
+    final current = _session;
+    if (current == null) return;
+    final updated = current.copyWith(lockedForNewPlayers: locked);
+    _session = updated;
+    _server.updateSession(updated);
+    await MasterDatabase.instance.upsertSession(updated);
+    notifyListeners();
+  }
+
+  /// Finalitza la partida: tothom veurà el podi final a l'instant. No es
+  /// pot finalitzar mentre hi hagi un minijoc en curs (cal acabar-lo
+  /// primer). En finalitzar, la sessió també es tanca a noves
+  /// incorporacions.
+  Future<bool> endSession() async {
+    final session = _session;
+    if (session == null || session.currentMinigameId != null) return false;
+    await _refreshTotals();
+    final updated = session.copyWith(
+      status: SessionStatus.finished,
+      lockedForNewPlayers: true,
+    );
+    _session = updated;
+    _server.updateSession(updated);
+    await MasterDatabase.instance.upsertSession(updated);
+    await _server.broadcastNow();
+    notifyListeners();
+    return true;
   }
 
   @override
