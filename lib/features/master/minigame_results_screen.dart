@@ -69,7 +69,9 @@ class _MinigameResultsScreenState extends State<MinigameResultsScreen> {
       }
       positions[player.id] = position;
     }
-    if (positions.isEmpty) {
+    // Si encara no hi ha cap jugador, es pot finalitzar el minijoc sense
+    // resultats. Només es demana almenys una posició quan hi ha jugadors.
+    if (positions.isEmpty && _eligiblePlayers.isNotEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
         content: Text("Introdueix la posició d'almenys un jugador."),
       ));
@@ -112,7 +114,10 @@ class _MinigameResultsScreenState extends State<MinigameResultsScreen> {
                 if (_eligiblePlayers.isEmpty)
                   const Padding(
                     padding: EdgeInsets.symmetric(vertical: 16),
-                    child: Text("Encara no s'ha unit cap jugador."),
+                    child: Text(
+                      "Encara no s'ha unit cap jugador. Pots finalitzar el "
+                      "minijoc igualment, sense resultats.",
+                    ),
                   )
                 else
                   ..._eligiblePlayers.map((player) => Padding(

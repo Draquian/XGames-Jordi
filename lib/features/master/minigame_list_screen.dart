@@ -37,6 +37,11 @@ class MinigameListScreen extends StatelessWidget {
                 children: [
                   Expanded(child: Text("Minijoc en curs: ${active.name}")),
                   FilledButton(
+                    // Dins d'un Row, el tema (minimumSize amb amplada infinita)
+                    // provoca un error de layout: cal una amplada mínima finita.
+                    style: FilledButton.styleFrom(
+                      minimumSize: const Size(0, 40),
+                    ),
                     onPressed: () => Navigator.of(context).push(
                       MaterialPageRoute(
                         builder: (_) =>
