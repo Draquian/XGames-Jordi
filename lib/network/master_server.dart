@@ -20,6 +20,7 @@ class MasterServer {
   MasterServer({
     required this.onPlayersUpdated,
     required this.buildStateForPlayer,
+    required this.onSendMessage,
   });
 
   /// Es crida cada vegada que la llista de jugadors canvia, perquè la UI
@@ -32,6 +33,18 @@ class MasterServer {
   /// resultats, així que li deleguem aquesta feina.
   final Future<Map<String, Object?>> Function(PlayerModel player)
       buildStateForPlayer;
+
+  /// Processa la petició d'un jugador d'enviar un missatge privat (i,
+  /// opcionalment, punts). Retorna `null` si s'ha acceptat, o un codi
+  /// d'error (`not_enough_points`, `finished`...). El remitent és sempre
+  /// el jugador d'aquesta connexió: mai es fa cas d'un identificador
+  /// enviat pel client.
+  final Future<String?> Function(
+    String fromPlayerId,
+    String toPlayerId,
+    String body,
+    int points,
+  ) onSendMessage;
 
   static const _uuid = Uuid();
 
@@ -122,6 +135,19 @@ class MasterServer {
             if (boundPlayerId != null) {
               await _markDisconnected(boundPlayerId!);
             }
+            break;
+          case ClientMsgType.sendMessage:
+            final senderId = boundPlayerId;
+            if (senderId == null) return;
+            final toId = msg['toPlayerId'] as String? ?? '';
+            final body = msg['body'] as String? ?? '';
+            final rawPoints = msg['points'];
+            final points = rawPoints is num ? rawPoints.toInt() : 0;
+            final reason = await onSendMessage(senderId, toId, body, points);
+            socket.add(encodeMessage(ServerMsgType.sendResult, {
+              'ok': reason == null,
+              'reason': reason,
+            }));
             break;
         }
       },

@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import 'core/app_theme.dart';
-import 'features/role_select_screen.dart';
+import 'features/splash_screen.dart';
 import 'state/master_state.dart';
 import 'state/player_state.dart';
 
@@ -24,7 +24,7 @@ class NavidadDeJordiApp extends StatelessWidget {
         title: 'Navidad de Jordi',
         debugShowCheckedModeBanner: false,
         theme: buildAppTheme(),
-        home: const RoleSelectScreen(),
+        home: const SplashScreen(),
       ),
     );
   }

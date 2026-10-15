@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter/foundation.dart';
@@ -7,6 +8,7 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 import '../data/local/master_database.dart';
 import '../data/models/minigame_model.dart';
 import '../data/models/minigame_result_model.dart';
+import '../data/models/player_message_model.dart';
 import '../data/models/player_model.dart';
 import '../data/models/point_adjustment_model.dart';
 import '../data/models/session_model.dart';
@@ -23,6 +25,7 @@ class MasterState extends ChangeNotifier {
   late final MasterServer _server = MasterServer(
     onPlayersUpdated: _onPlayersUpdated,
     buildStateForPlayer: _buildStateForPlayer,
+    onSendMessage: _handleSendMessage,
   );
 
   SessionModel? _session;
@@ -97,6 +100,7 @@ class MasterState extends ChangeNotifier {
     final session = _session!;
     final totalPoints = await MasterDatabase.instance.getTotalPoints(player.id);
     final history = await _buildHistoryEntries(player.id);
+    final inbox = await _buildInboxFor(player.id);
     final roster = _players
         .where((p) => p.status != PlayerStatus.kicked)
         .map((p) => p.toRosterJson())
@@ -116,6 +120,7 @@ class MasterState extends ChangeNotifier {
       },
       'players': roster,
       'finalStandings': finalStandings,
+      'inbox': inbox,
     };
   }
 
@@ -155,9 +160,132 @@ class MasterState extends ChangeNotifier {
         'timestampMs': a.createdAt.millisecondsSinceEpoch,
       });
     }
+    // Transferències de punts entre jugadors (el text del missatge no hi
+    // surt: només la quantitat i amb qui).
+    final messages = await db.getMessagesForPlayer(playerId);
+    for (final m in messages) {
+      if (m.points <= 0) continue;
+      final isSender = m.fromPlayerId == playerId;
+      final otherName = _playerName(isSender ? m.toPlayerId : m.fromPlayerId);
+      entries.add({
+        'type': 'transfer',
+        'label': isSender
+            ? 'Transferència a $otherName'
+            : 'Transferència de $otherName',
+        'position': null,
+        'points': isSender ? -m.points : m.points,
+        'timestampMs': m.createdAt.millisecondsSinceEpoch,
+      });
+    }
     entries.sort((x, y) =>
         (x['timestampMs'] as int).compareTo(y['timestampMs'] as int));
     return entries;
+  }
+
+  String _playerName(String playerId) {
+    for (final p in _players) {
+      if (p.id == playerId) return p.name;
+    }
+    return '???';
+  }
+
+  /// Missatges d'UN jugador (enviats i rebuts). Cada jugador només rep els
+  /// seus: ningú més els veu.
+  Future<List<Map<String, Object?>>> _buildInboxFor(String playerId) async {
+    final messages =
+        await MasterDatabase.instance.getMessagesForPlayer(playerId);
+    final inbox = <Map<String, Object?>>[];
+    for (final m in messages) {
+      final isOut = m.fromPlayerId == playerId;
+      final otherId = isOut ? m.toPlayerId : m.fromPlayerId;
+      inbox.add({
+        'id': m.id,
+        'direction': isOut ? 'out' : 'in',
+        'otherPlayerId': otherId,
+        'otherName': _playerName(otherId),
+        'body': m.body,
+        'points': m.points,
+        'createdAtMs': m.createdAt.millisecondsSinceEpoch,
+      });
+    }
+    return inbox;
+  }
+
+  /// Longitud màxima d'un missatge privat.
+  static const maxMessageLength = 280;
+
+  /// Cua perquè les peticions d'enviament es processin d'una en una: així
+  /// dues transferències simultànies no poden gastar els mateixos punts.
+  Future<void> _sendQueue = Future<void>.value();
+
+  Future<String?> _handleSendMessage(
+    String fromId,
+    String toId,
+    String body,
+    int points,
+  ) {
+    final completer = Completer<String?>();
+    _sendQueue = _sendQueue.then((_) async {
+      try {
+        completer.complete(await _processSend(fromId, toId, body, points));
+      } catch (_) {
+        completer.complete('error');
+      }
+    });
+    return completer.future;
+  }
+
+  /// Valida i desa un missatge (amb transferència opcional). Retorna `null`
+  /// si tot ha anat bé, o el codi del motiu pel qual es rebutja.
+  Future<String?> _processSend(
+    String fromId,
+    String toId,
+    String body,
+    int points,
+  ) async {
+    final session = _session;
+    if (session == null || session.status == SessionStatus.finished) {
+      return 'finished';
+    }
+    if (fromId == toId) return 'self';
+
+    PlayerModel? sender;
+    PlayerModel? recipient;
+    for (final p in _players) {
+      if (p.id == fromId) sender = p;
+      if (p.id == toId) recipient = p;
+    }
+    if (sender == null || sender.status == PlayerStatus.kicked) {
+      return 'invalid_sender';
+    }
+    if (recipient == null || recipient.status == PlayerStatus.kicked) {
+      return 'invalid_recipient';
+    }
+
+    final text = body.trim();
+    if (points < 0) return 'invalid_points';
+    if (text.isEmpty && points == 0) return 'empty';
+    if (text.length > maxMessageLength) return 'too_long';
+
+    final db = MasterDatabase.instance;
+    if (points > 0) {
+      final balance = await db.getTotalPoints(fromId);
+      if (points > balance) return 'not_enough_points';
+    }
+
+    await db.insertMessage(PlayerMessageModel(
+      id: _uuid.v4(),
+      sessionId: session.id,
+      fromPlayerId: fromId,
+      toPlayerId: toId,
+      body: text,
+      points: points,
+      createdAt: DateTime.now(),
+    ));
+    await _refreshTotals();
+    await _server.broadcastNow();
+    notifyListeners();
+    return null;
   }
 
   /// Versió pública de `_buildHistoryEntries`, per a la pantalla del

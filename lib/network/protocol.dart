@@ -7,6 +7,7 @@ import 'dart:convert';
 class ClientMsgType {
   static const join = 'join'; // {deviceId, name}
   static const leave = 'leave'; // {}
+  static const sendMessage = 'send_message'; // {toPlayerId, body, points}
 }
 
 /// Missatges MÀSTER -> JUGADOR
@@ -16,6 +17,7 @@ class ServerMsgType {
   static const state = 'state'; // {session, minigames, me, players}
   static const kicked = 'kicked'; // {}
   static const sessionEnded = 'session_ended'; // {standings}
+  static const sendResult = 'send_result'; // {ok, reason}
 }
 
 /// Codifica un missatge amb el seu tipus per enviar-lo pel WebSocket.

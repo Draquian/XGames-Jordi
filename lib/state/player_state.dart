@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 
 import '../data/local/device_identity.dart';
@@ -15,6 +17,7 @@ class PlayerState extends ChangeNotifier {
     onKicked: _onKicked,
     onConnectionChanged: _onConnectionChanged,
     onJoinRejected: _onJoinRejected,
+    onSendResult: _onSendResult,
   );
 
   String? _playerId;
@@ -22,6 +25,23 @@ class PlayerState extends ChangeNotifier {
   bool _kicked = false;
   String? _joinRejectedReason;
   Map<String, Object?>? _lastState;
+
+  // Missatges privats
+  Completer<String?>? _pendingSend;
+  final StreamController<Map<String, Object?>> _incomingController =
+      StreamController<Map<String, Object?>>.broadcast();
+  final Set<String> _knownMessageIds = {};
+  bool _inboxInitialized = false;
+  int _lastSeenMessageMs = 0;
+  bool _disposed = false;
+
+  PlayerState() {
+    PlayerCache.loadLastSeenMessageMs().then((ms) {
+      if (_disposed) return;
+      _lastSeenMessageMs = ms;
+      notifyListeners();
+    });
+  }
 
   String? get playerId => _playerId;
   bool get connected => _connected;
@@ -43,6 +63,29 @@ class PlayerState extends ChangeNotifier {
         .map((e) => Map<String, Object?>.from(e as Map))
         .toList(growable: false);
   }
+
+  /// Els missatges privats d'aquest jugador (enviats i rebuts), del més
+  /// antic al més nou. Cada entrada té `id`, `direction` ('in' o 'out'),
+  /// `otherPlayerId`, `otherName`, `body`, `points` i `createdAtMs`.
+  List<Map<String, Object?>> get inbox {
+    final list = _lastState?['inbox'] as List?;
+    if (list == null) return const [];
+    return list
+        .map((e) => Map<String, Object?>.from(e as Map))
+        .toList(growable: false);
+  }
+
+  /// Missatges rebuts que encara no s'han vist a la pantalla de missatges.
+  int get unreadMessages => inbox
+      .where((m) =>
+          m['direction'] == 'in' &&
+          ((m['createdAtMs'] as int?) ?? 0) > _lastSeenMessageMs)
+      .length;
+
+  /// Avisa cada vegada que arriba un missatge nou (només mentre l'app és
+  /// oberta i connectada).
+  Stream<Map<String, Object?>> get incomingMessages =>
+      _incomingController.stream;
 
   /// El propi historial: una barreja de resultats de minijocs i
   /// ajustaments manuals del màster, en ordre cronològic. Cada entrada té
@@ -127,6 +170,75 @@ class PlayerState extends ChangeNotifier {
     return true;
   }
 
+  /// Envia un missatge privat al jugador `toPlayerId` i, si `points` > 0,
+  /// li transfereix aquests punts dels teus. Retorna `null` si el màster
+  /// ho ha acceptat, o un codi d'error.
+  Future<String?> sendMessage({
+    required String toPlayerId,
+    required String body,
+    required int points,
+  }) async {
+    if (_pendingSend != null) return 'busy';
+    final sent = _client.sendMessage(
+      toPlayerId: toPlayerId,
+      body: body,
+      points: points,
+    );
+    if (!sent) return 'offline';
+    final completer = Completer<String?>();
+    _pendingSend = completer;
+    try {
+      return await completer.future.timeout(
+        const Duration(seconds: 8),
+        onTimeout: () => 'timeout',
+      );
+    } finally {
+      _pendingSend = null;
+    }
+  }
+
+  void _onSendResult(bool ok, String? reason) {
+    final pending = _pendingSend;
+    if (pending != null && !pending.isCompleted) {
+      pending.complete(ok ? null : (reason ?? 'error'));
+    }
+  }
+
+  /// Marca com a vistos tots els missatges rebuts fins ara.
+  void markMessagesSeen() {
+    var newest = _lastSeenMessageMs;
+    for (final m in inbox) {
+      if (m['direction'] != 'in') continue;
+      final ms = (m['createdAtMs'] as int?) ?? 0;
+      if (ms > newest) newest = ms;
+    }
+    if (newest == _lastSeenMessageMs) return;
+    _lastSeenMessageMs = newest;
+    PlayerCache.saveLastSeenMessageMs(newest);
+    notifyListeners();
+  }
+
+  /// Detecta missatges nous respecte als que ja coneixíem. El primer estat
+  /// després de (re)connectar només s'apunta, sense avisos, per no omplir
+  /// la pantalla de notificacions antigues.
+  void _trackIncomingMessages(Map<String, Object?> state) {
+    final list = state['inbox'] as List?;
+    if (list == null) return;
+    for (final raw in list) {
+      final message = Map<String, Object?>.from(raw as Map);
+      final id = message['id'] as String?;
+      if (id == null) continue;
+      final isNew = _knownMessageIds.add(id);
+      if (isNew &&
+          _inboxInitialized &&
+          message['direction'] == 'in' &&
+          !_incomingController.isClosed) {
+        _incomingController.add(message);
+      }
+    }
+    _inboxInitialized = true;
+  }
+
   void _onJoined(String playerId, String sessionId) {
     _playerId = playerId;
     notifyListeners();
@@ -134,6 +246,7 @@ class PlayerState extends ChangeNotifier {
 
   void _onState(Map<String, Object?> state) {
     _lastState = state;
+    _trackIncomingMessages(state);
     final me = state['me'] as Map?;
     if (me != null) {
       PlayerCache.saveLastMeSnapshot(Map<String, Object?>.from(me));
@@ -153,6 +266,7 @@ class PlayerState extends ChangeNotifier {
 
   void _onConnectionChanged(bool connected) {
     _connected = connected;
+    if (!connected) _inboxInitialized = false;
     notifyListeners();
   }
 
@@ -162,11 +276,15 @@ class PlayerState extends ChangeNotifier {
     _playerId = null;
     _lastState = null;
     _connected = false;
+    _knownMessageIds.clear();
+    _inboxInitialized = false;
     notifyListeners();
   }
 
   @override
   void dispose() {
+    _disposed = true;
+    _incomingController.close();
     _client.disconnect();
     super.dispose();
   }

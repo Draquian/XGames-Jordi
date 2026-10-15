@@ -103,17 +103,13 @@ class _PlayerHistoryScreenState extends State<PlayerHistoryScreen> {
                   )
                 else
                   ..._history.reversed.map((entry) {
-                    final isAdjustment = entry['type'] == 'adjustment';
+                    final type = entry['type'] as String? ?? 'result';
                     final points = entry['points'] as int? ?? 0;
                     final label = entry['label'] as String? ?? '';
                     return ListTile(
-                      leading: Icon(
-                        isAdjustment ? Icons.tune : Icons.emoji_events_outlined,
-                      ),
+                      leading: Icon(_iconForType(type)),
                       title: Text(label),
-                      subtitle: isAdjustment
-                          ? const Text("Ajustament manual")
-                          : Text("Posició ${entry['position']}"),
+                      subtitle: Text(_subtitleForEntry(type, entry)),
                       trailing: Text(
                         "${points >= 0 ? '+' : ''}$points",
                         style: Theme.of(context).textTheme.titleMedium,
@@ -208,5 +204,27 @@ class _AdjustmentDialogState extends State<_AdjustmentDialog> {
         ),
       ],
     );
+  }
+}
+
+IconData _iconForType(String type) {
+  switch (type) {
+    case 'adjustment':
+      return Icons.tune;
+    case 'transfer':
+      return Icons.swap_horiz;
+    default:
+      return Icons.emoji_events_outlined;
+  }
+}
+
+String _subtitleForEntry(String type, Map<String, Object?> entry) {
+  switch (type) {
+    case 'adjustment':
+      return "Ajustament manual";
+    case 'transfer':
+      return "Transferència entre jugadors";
+    default:
+      return "Posició ${entry['position']}";
   }
 }

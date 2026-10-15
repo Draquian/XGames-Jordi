@@ -4,6 +4,7 @@ import 'package:sqflite/sqflite.dart';
 
 import '../models/minigame_model.dart';
 import '../models/minigame_result_model.dart';
+import '../models/player_message_model.dart';
 import '../models/player_model.dart';
 import '../models/point_adjustment_model.dart';
 import '../models/session_model.dart';
@@ -31,8 +32,9 @@ class MasterDatabase {
     final dbPath = p.join(dir.path, 'navidad_de_jordi.db');
     return openDatabase(
       dbPath,
-      version: 1,
+      version: 2,
       onCreate: (db, version) async {
+        await _createMessagesTable(db);
         await db.execute('''
           CREATE TABLE sessions (
             id TEXT PRIMARY KEY,
@@ -91,6 +93,26 @@ class MasterDatabase {
           )
         ''');
       },
+      // Les instal·lacions que ja tenien la versió 1 reben la taula nova.
+      onUpgrade: (db, oldVersion, newVersion) async {
+        if (oldVersion < 2) {
+          await _createMessagesTable(db);
+        }
+      },
+    );
+  }
+
+  static Future<void> _createMessagesTable(Database db) {
+    return db.execute(
+      'CREATE TABLE IF NOT EXISTS player_messages ('
+      'id TEXT PRIMARY KEY, '
+      'session_id TEXT NOT NULL, '
+      'from_player_id TEXT NOT NULL, '
+      'to_player_id TEXT NOT NULL, '
+      'body TEXT NOT NULL, '
+      'points INTEGER NOT NULL DEFAULT 0, '
+      'created_at INTEGER NOT NULL'
+      ')',
     );
   }
 
@@ -253,13 +275,56 @@ class MasterDatabase {
   }
 
   /// Puntuació total d'un jugador: suma de tots els seus resultats de
-  /// minijoc més tots els ajustaments manuals.
+  /// minijoc, tots els ajustaments manuals i les transferències entre
+  /// jugadors (rebudes menys enviades).
   Future<int> getTotalPoints(String playerId) async {
     final results = await getResultsForPlayer(playerId);
     final adjustments = await getAdjustmentsForPlayer(playerId);
     final resultsSum = results.fold<int>(0, (sum, r) => sum + r.points);
     final adjustmentsSum =
         adjustments.fold<int>(0, (sum, a) => sum + a.delta);
-    return resultsSum + adjustmentsSum;
+    final transfers = await getTransferBalance(playerId);
+    return resultsSum + adjustmentsSum + transfers;
+  }
+
+  // ---------------------------------------------------------------------
+  // Missatges privats i transferències de punts
+  // ---------------------------------------------------------------------
+
+  Future<void> insertMessage(PlayerMessageModel message) async {
+    final db = await database;
+    await db.insert('player_messages', message.toMap());
+  }
+
+  /// Tots els missatges on el jugador és remitent o destinatari.
+  Future<List<PlayerMessageModel>> getMessagesForPlayer(
+    String playerId,
+  ) async {
+    final db = await database;
+    final rows = await db.query(
+      'player_messages',
+      where: 'from_player_id = ? OR to_player_id = ?',
+      whereArgs: [playerId, playerId],
+      orderBy: 'created_at ASC',
+    );
+    return rows.map(PlayerMessageModel.fromMap).toList();
+  }
+
+  /// Punts rebuts menys punts enviats en transferències entre jugadors.
+  Future<int> getTransferBalance(String playerId) async {
+    final db = await database;
+    final received = await db.rawQuery(
+      'SELECT COALESCE(SUM(points), 0) AS total FROM player_messages '
+      'WHERE to_player_id = ?',
+      [playerId],
+    );
+    final sent = await db.rawQuery(
+      'SELECT COALESCE(SUM(points), 0) AS total FROM player_messages '
+      'WHERE from_player_id = ?',
+      [playerId],
+    );
+    final receivedTotal = (received.first['total'] as num?)?.toInt() ?? 0;
+    final sentTotal = (sent.first['total'] as num?)?.toInt() ?? 0;
+    return receivedTotal - sentTotal;
   }
 }

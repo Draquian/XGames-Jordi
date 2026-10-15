@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -5,6 +7,7 @@ import '../../state/player_state.dart';
 import '../role_select_screen.dart';
 import '../shared/podium_view.dart';
 import '../shared/reconnecting_banner.dart';
+import 'messages_screen.dart';
 import 'minigame_active_section.dart';
 import 'my_stats_screen.dart';
 
@@ -16,15 +19,50 @@ class PlayerLobbyScreen extends StatefulWidget {
 }
 
 class _PlayerLobbyScreenState extends State<PlayerLobbyScreen> {
+  StreamSubscription<Map<String, Object?>>? _incomingSub;
+
   @override
   void initState() {
     super.initState();
+    _incomingSub =
+        context.read<PlayerState>().incomingMessages.listen(_onIncoming);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final playerState = context.read<PlayerState>();
       if (!playerState.connected) {
         playerState.tryAutoReconnect();
       }
     });
+  }
+
+  @override
+  void dispose() {
+    _incomingSub?.cancel();
+    super.dispose();
+  }
+
+  void _openMessages() {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const MessagesScreen()),
+    );
+  }
+
+  /// Avís en pantalla quan arriba un missatge nou mentre l'app és oberta.
+  void _onIncoming(Map<String, Object?> message) {
+    if (!mounted) return;
+    final from = message['otherName'] as String? ?? '';
+    final body = message['body'] as String? ?? '';
+    final points = message['points'] as int? ?? 0;
+    final text = points > 0
+        ? (body.isEmpty
+            ? "$from t'ha enviat $points punts"
+            : "$from t'ha enviat un missatge i $points punts")
+        : "Nou missatge de $from";
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(text),
+        action: SnackBarAction(label: "Veure", onPressed: _openMessages),
+      ),
+    );
   }
 
   void _leave() {
@@ -68,6 +106,15 @@ class _PlayerLobbyScreenState extends State<PlayerLobbyScreen> {
               : playerState.sessionName,
         ),
         actions: [
+          IconButton(
+            onPressed: _openMessages,
+            icon: Badge(
+              isLabelVisible: playerState.unreadMessages > 0,
+              label: Text('${playerState.unreadMessages}'),
+              child: const Icon(Icons.mail_outline),
+            ),
+            tooltip: "Missatges",
+          ),
           IconButton(
             onPressed: () => Navigator.of(context).push(
               MaterialPageRoute(builder: (_) => const MyStatsScreen()),

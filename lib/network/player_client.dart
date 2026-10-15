@@ -16,6 +16,7 @@ class PlayerClient {
     required this.onKicked,
     required this.onConnectionChanged,
     required this.onJoinRejected,
+    required this.onSendResult,
   });
 
   final void Function(String playerId, String sessionId) onJoined;
@@ -23,6 +24,7 @@ class PlayerClient {
   final void Function() onKicked;
   final void Function(bool connected) onConnectionChanged;
   final void Function(String reason) onJoinRejected;
+  final void Function(bool ok, String? reason) onSendResult;
 
   static const _retryDelay = Duration(seconds: 3);
 
@@ -92,6 +94,9 @@ class PlayerClient {
         onJoinRejected(msg['reason'] as String? ?? 'unknown');
         _closeChannelOnly();
         break;
+      case ServerMsgType.sendResult:
+        onSendResult(msg['ok'] == true, msg['reason'] as String?);
+        break;
     }
   }
 
@@ -111,6 +116,24 @@ class PlayerClient {
   void _closeChannelOnly() {
     _channel?.sink.close();
     _channel = null;
+  }
+
+  /// Demana al màster enviar un missatge privat (i, si `points` > 0, una
+  /// transferència de punts). Retorna `false` si ara mateix no hi ha
+  /// connexió; la resposta del màster arriba per `onSendResult`.
+  bool sendMessage({
+    required String toPlayerId,
+    required String body,
+    required int points,
+  }) {
+    final channel = _channel;
+    if (channel == null) return false;
+    channel.sink.add(encodeMessage(ClientMsgType.sendMessage, {
+      'toPlayerId': toPlayerId,
+      'body': body,
+      'points': points,
+    }));
+    return true;
   }
 
   /// L'usuari surt voluntàriament (per exemple, torna a la pantalla
