@@ -6,6 +6,8 @@ import '../../data/models/player_model.dart';
 import '../../data/models/session_model.dart';
 import '../../state/master_state.dart';
 import 'final_podium_screen.dart';
+import 'master_message_toaster.dart';
+import 'master_messages_screen.dart';
 import 'minigame_list_screen.dart';
 import 'player_history_screen.dart';
 import 'ranking_screen.dart';
@@ -23,10 +25,22 @@ class MasterLobbyScreen extends StatelessWidget {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
-    return Scaffold(
+    return MasterMessageToaster(
+      child: Scaffold(
       appBar: AppBar(
         title: Text(session.name),
         actions: [
+          IconButton(
+            icon: Badge(
+              isLabelVisible: master.unreadMasterMessages > 0,
+              label: Text('${master.unreadMasterMessages}'),
+              child: const Icon(Icons.mail_outline),
+            ),
+            tooltip: "Missatges dels jugadors",
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const MasterMessagesScreen()),
+            ),
+          ),
           IconButton(
             icon: const Icon(Icons.leaderboard_outlined),
             tooltip: "Classificació",
@@ -50,8 +64,7 @@ class MasterLobbyScreen extends StatelessWidget {
             child: ListTile(
               leading: const Icon(Icons.leaderboard_outlined),
               title: const Text("Classificació"),
-              subtitle:
-                  const Text("Punts totals i historial de tots els jugadors"),
+              subtitle: const Text("Punts totals i historial de tots els jugadors"),
               trailing: const Icon(Icons.chevron_right),
               onTap: () => Navigator.of(context).push(
                 MaterialPageRoute(builder: (_) => const RankingScreen()),
@@ -81,7 +94,8 @@ class MasterLobbyScreen extends StatelessWidget {
                 ),
                 const SizedBox(height: 12),
                 OutlinedButton(
-                  onPressed: () => context.read<MasterState>().refreshLocalIp(),
+                  onPressed: () =>
+                      context.read<MasterState>().refreshLocalIp(),
                   child: const Text("Ja ho he fet, torna-ho a provar"),
                 ),
               ],
@@ -167,6 +181,7 @@ class MasterLobbyScreen extends StatelessWidget {
               label: const Text("Finalitzar la partida"),
             ),
         ],
+      ),
       ),
     );
   }

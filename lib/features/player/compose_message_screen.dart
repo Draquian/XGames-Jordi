@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../data/models/player_message_model.dart';
 import '../../state/player_state.dart';
 
 /// Escriure un missatge privat a un altre jugador i, si es vol, enviar-li
@@ -49,6 +50,8 @@ class _ComposeMessageScreenState extends State<ComposeMessageScreen> {
       case 'timeout':
         return "No s'ha pogut confirmar l'enviament. Mira els teus missatges "
             "i resultats abans de tornar-ho a provar.";
+      case 'points_to_master':
+        return "Al màster no se li poden enviar punts.";
       case 'busy':
         return "Encara s'està enviant l'anterior.";
       default:
@@ -65,7 +68,9 @@ class _ComposeMessageScreenState extends State<ComposeMessageScreen> {
     }
 
     final body = _bodyController.text.trim();
-    final pointsText = _pointsController.text.trim();
+    final pointsText = recipientId == masterRecipientId
+        ? ''
+        : _pointsController.text.trim();
     final points = pointsText.isEmpty ? 0 : int.tryParse(pointsText);
     if (points == null || points < 0) {
       setState(() => _error = "Els punts han de ser un número enter positiu.");
@@ -143,6 +148,24 @@ class _ComposeMessageScreenState extends State<ComposeMessageScreen> {
         children: [
           Text("Per a", style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 8),
+          Card(
+            color: _recipientId == masterRecipientId
+                ? scheme.primaryContainer
+                : null,
+            child: ListTile(
+              leading: Icon(
+                _recipientId == masterRecipientId
+                    ? Icons.check_circle
+                    : Icons.support_agent,
+              ),
+              title: const Text("Màster"),
+              subtitle: const Text("Només missatge, sense punts"),
+              onTap: () => setState(() {
+                _recipientId = masterRecipientId;
+                _pointsController.clear();
+              }),
+            ),
+          ),
           if (recipients.isEmpty)
             const Text("Encara no hi ha cap altre jugador a la partida.")
           else
@@ -175,9 +198,12 @@ class _ComposeMessageScreenState extends State<ComposeMessageScreen> {
           TextField(
             controller: _pointsController,
             keyboardType: TextInputType.number,
+            enabled: _recipientId != masterRecipientId,
             decoration: InputDecoration(
               labelText: "Punts a enviar (opcional)",
-              helperText: "Tens ${playerState.myTotalPoints} punts",
+              helperText: _recipientId == masterRecipientId
+                  ? "Al màster no se li poden enviar punts"
+                  : "Tens ${playerState.myTotalPoints} punts",
             ),
           ),
           if (_error != null)

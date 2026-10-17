@@ -310,6 +310,20 @@ class MasterDatabase {
     return rows.map(PlayerMessageModel.fromMap).toList();
   }
 
+  /// Missatges que els jugadors han enviat al màster en aquesta sessió.
+  Future<List<PlayerMessageModel>> getMessagesToMaster(
+    String sessionId,
+  ) async {
+    final db = await database;
+    final rows = await db.query(
+      'player_messages',
+      where: 'to_player_id = ? AND session_id = ?',
+      whereArgs: [masterRecipientId, sessionId],
+      orderBy: 'created_at ASC',
+    );
+    return rows.map(PlayerMessageModel.fromMap).toList();
+  }
+
   /// Punts rebuts menys punts enviats en transferències entre jugadors.
   Future<int> getTransferBalance(String playerId) async {
     final db = await database;

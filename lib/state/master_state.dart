@@ -6,6 +6,7 @@ import 'package:uuid/uuid.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../data/local/master_database.dart';
+import '../data/local/master_prefs.dart';
 import '../data/models/minigame_model.dart';
 import '../data/models/minigame_result_model.dart';
 import '../data/models/player_message_model.dart';
@@ -32,6 +33,14 @@ class MasterState extends ChangeNotifier {
   List<PlayerModel> _players = [];
   List<MinigameModel> _minigames = [];
   Map<String, int> _totalPoints = {};
+
+  // Missatges que els jugadors envien al màster
+  List<Map<String, Object?>> _masterInbox = [];
+  int _masterLastSeenMs = 0;
+  bool _masterSeenLoaded = false;
+  final StreamController<Map<String, Object?>> _incomingController =
+      StreamController<Map<String, Object?>>.broadcast();
+
   String? _localIp;
   bool _isStarting = false;
 
@@ -47,6 +56,19 @@ class MasterState extends ChangeNotifier {
   String? get startError => _startError;
   String? get localIp => _localIp;
   bool get hasActiveSession => _session != null;
+
+  /// Missatges que els jugadors han enviat al màster, del més antic al més
+  /// nou. Cada entrada té `id`, `fromName`, `body` i `createdAtMs`.
+  List<Map<String, Object?>> get masterInbox => List.unmodifiable(_masterInbox);
+
+  /// Missatges de jugadors que el màster encara no ha vist.
+  int get unreadMasterMessages => _masterInbox
+      .where((m) => ((m['createdAtMs'] as int?) ?? 0) > _masterLastSeenMs)
+      .length;
+
+  /// Avisa quan un jugador envia un missatge al màster (amb l'app oberta).
+  Stream<Map<String, Object?>> get incomingMessages =>
+      _incomingController.stream;
 
   int totalPointsFor(String playerId) => _totalPoints[playerId] ?? 0;
 
@@ -183,6 +205,7 @@ class MasterState extends ChangeNotifier {
   }
 
   String _playerName(String playerId) {
+    if (playerId == masterRecipientId) return 'Màster';
     for (final p in _players) {
       if (p.id == playerId) return p.name;
     }
@@ -209,6 +232,44 @@ class MasterState extends ChangeNotifier {
       });
     }
     return inbox;
+  }
+
+  /// Torna a carregar els missatges que els jugadors han enviat al màster.
+  Future<void> _refreshMasterInbox() async {
+    final session = _session;
+    if (session == null) {
+      _masterInbox = [];
+      return;
+    }
+    if (!_masterSeenLoaded) {
+      _masterLastSeenMs = await MasterPrefs.loadLastSeenMessageMs();
+      _masterSeenLoaded = true;
+    }
+    final messages =
+        await MasterDatabase.instance.getMessagesToMaster(session.id);
+    final inbox = <Map<String, Object?>>[];
+    for (final m in messages) {
+      inbox.add({
+        'id': m.id,
+        'fromName': _playerName(m.fromPlayerId),
+        'body': m.body,
+        'createdAtMs': m.createdAt.millisecondsSinceEpoch,
+      });
+    }
+    _masterInbox = inbox;
+  }
+
+  /// Marca com a vistos tots els missatges de jugadors rebuts fins ara.
+  void markMasterMessagesSeen() {
+    var newest = _masterLastSeenMs;
+    for (final m in _masterInbox) {
+      final ms = (m['createdAtMs'] as int?) ?? 0;
+      if (ms > newest) newest = ms;
+    }
+    if (newest == _masterLastSeenMs) return;
+    _masterLastSeenMs = newest;
+    MasterPrefs.saveLastSeenMessageMs(newest);
+    notifyListeners();
   }
 
   /// Longitud màxima d'un missatge privat.
@@ -258,12 +319,16 @@ class MasterState extends ChangeNotifier {
     if (sender == null || sender.status == PlayerStatus.kicked) {
       return 'invalid_sender';
     }
-    if (recipient == null || recipient.status == PlayerStatus.kicked) {
+    final toMaster = toId == masterRecipientId;
+    if (!toMaster &&
+        (recipient == null || recipient.status == PlayerStatus.kicked)) {
       return 'invalid_recipient';
     }
 
     final text = body.trim();
     if (points < 0) return 'invalid_points';
+    // Al màster només se li poden enviar missatges, mai punts.
+    if (toMaster && points != 0) return 'points_to_master';
     if (text.isEmpty && points == 0) return 'empty';
     if (text.length > maxMessageLength) return 'too_long';
 
@@ -283,6 +348,12 @@ class MasterState extends ChangeNotifier {
       createdAt: DateTime.now(),
     ));
     await _refreshTotals();
+    if (toMaster) {
+      await _refreshMasterInbox();
+      if (!_incomingController.isClosed) {
+        _incomingController.add({'fromName': sender.name, 'body': text});
+      }
+    }
     await _server.broadcastNow();
     notifyListeners();
     return null;
@@ -346,6 +417,7 @@ class MasterState extends ChangeNotifier {
     _players = _server.players;
     _minigames = await MasterDatabase.instance.getMinigamesForSession(resumed.id);
     await _refreshTotals();
+    await _refreshMasterInbox();
     _isStarting = false;
     if (_localIp != null) await WakelockPlus.enable();
     notifyListeners();
@@ -390,6 +462,7 @@ class MasterState extends ChangeNotifier {
     _players = _server.players;
     _minigames = [];
     _totalPoints = {};
+    _masterInbox = [];
     _isStarting = false;
     await WakelockPlus.enable();
     notifyListeners();
@@ -577,6 +650,7 @@ class MasterState extends ChangeNotifier {
 
   @override
   void dispose() {
+    _incomingController.close();
     _server.stop();
     WakelockPlus.disable();
     super.dispose();

@@ -1,3 +1,7 @@
+/// Identificador especial que fa servir un jugador per escriure al màster
+/// (el màster no és un jugador, així que no té identificador propi).
+const String masterRecipientId = 'master';
+
 /// Un missatge privat entre dos jugadors, amb una transferència de punts
 /// opcional (`points` > 0). Només el veuen el remitent i el destinatari.
 class PlayerMessageModel {
